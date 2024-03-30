@@ -1,4 +1,4 @@
-mg = imread('picture');     %输入图像
+img = imread('picture');     %输入图像
 r=img(:,:,1);
 g=img(:,:,2);
 b=img(:,:,3);   
