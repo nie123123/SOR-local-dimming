@@ -1,5 +1,5 @@
 % Read the image
-img = imread('F:\nie\high\pic (51).jpg');
+img = imread('your picture');
 img = double(img);
 
 % Read the input image XH
