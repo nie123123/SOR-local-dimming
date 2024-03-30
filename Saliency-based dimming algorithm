@@ -1,0 +1,124 @@
+% 读取图像
+img = imread('F:\nie\high\pic (51).jpg');
+img=double(img);
+
+% 读取输入图像 XH
+XH = img;
+% 下采样
+XL = imresize(XH, [48, 64], 'bicubic'); % 使用双三次插值法将图像下采样
+
+% 获取每个颜色通道的分量
+redChannel = double(XL(:,:,1));
+greenChannel = double(XL(:,:,2));
+blueChannel = double(XL(:,:,3));
+
+% 对每个颜色通道应用DCT变换
+dctRed = dct2(redChannel);
+dctGreen = dct2(greenChannel);
+dctBlue = dct2(blueChannel);
+% 计算图像签名
+IS_R = sign(dctRed); % 对下采样图像进行离散余弦变换(DCT)并取符号
+IS_G = sign(dctGreen);
+IS_B = sign(dctBlue);
+
+% 逆变换重构图像
+reconstructed_XLr = idct2(IS_R); % 对签名图像进行逆离散余弦变换(IDCT)重构图像
+reconstructed_XLg = idct2(IS_G);
+reconstructed_XLb = idct2(IS_B);
+
+% 计算初始显著性图
+SM_R = conv2(reconstructed_XLr .* reconstructed_XLr, fspecial('gaussian', [5 5], 1), 'same'); % 使用高斯平滑滤波器计算初始显著性图
+SM_G = conv2(reconstructed_XLg .* reconstructed_XLg, fspecial('gaussian', [5 5], 1), 'same');
+SM_B = conv2(reconstructed_XLb .* reconstructed_XLb, fspecial('gaussian', [5 5], 1), 'same');
+SM_H1= 0.2989*SM_R + 0.5870 *SM_G+0.1140 *SM_B;
+% 上采样得到高分辨率显著性图
+SM_H = imresize(SM_H1,  [1080, 1920], 'bicubic'); % 使用双三次插值法将初始显著性图上采样到原图像大小
+% 找到矩阵中的最大值和最小值
+maxValue = max(SM_H(:));
+minValue = min(SM_H(:));
+% 归一化矩阵
+SM_H = (SM_H - minValue) / (maxValue - minValue);
+S=SM_H;
+imshow(SM_H)
+
+% 计算图像参数
+[row, col, ~] = size(img);
+N = row * col;
+lambda_row = row;
+lambda_col = col;
+lambda_color = 3;
+gamma = 2.2;
+S_max = max(S(:));
+
+% 计算 delta 
+delta= mean(S(:)) + std(S(:));
+% 截断 W_es
+S_T = zeros(size(S));
+S_T(S >= delta) = S(S >= delta) / double(S_max);
+
+% 计算IMAX和目标MSE
+max_R = max(img(:, :, 1), [], 'all');
+max_G = max(img(:, :, 2), [], 'all');
+max_B = max(img(:, :, 3), [], 'all');
+IMAX = max([max_R, max_G, max_B]);
+target_PSNR = 35; % 目标PSNR
+target_MSE = (255^2) / (10^(target_PSNR/10));
+
+% 截断的RGB图像
+truncatedImage = img;
+truncatedImage(repmat(~S_T, [1, 1, size(img, 3)])) = 0;
+
+% 计算目标总方差
+num_pixels = sum(S_T(:) > 0);
+lambda =num_pixels*lambda_color;
+target_TSE = target_MSE * lambda;
+
+imshow(truncatedImage/255)
+
+% 初始化最大剪裁点和最小总方差
+ICCP=IMAX-1;
+TSEC_MAX = Inf;
+
+% 寻找最佳剪裁点
+for i = IMAX:-1:0
+    TSE_R = sum(sum((truncatedImage(:, :, 1) > i) .* (truncatedImage(:, :, 1) - i).^2));
+    TSE_G = sum(sum((truncatedImage(:, :, 2) > i) .* (truncatedImage(:, :, 2) - i).^2));
+    TSE_B = sum(sum((truncatedImage(:, :, 3) > i) .* (truncatedImage(:, :, 3) - i).^2));
+    TSEC_MAX_new = TSE_R + TSE_G + TSE_B;
+    
+    if TSEC_MAX_new < target_TSE
+        ICCP = i;
+        TSEC_MAX = TSEC_MAX_new;
+    end
+end
+Z=ones(1080,1920)*ICCP;
+imshow(Z/255)
+imwrite(Z/255, 'F:\nie1\cut.jpg');
+% 原始显示图像
+BL_0=1;
+image=BL_0.*(img);
+imshow(image/255)
+
+
+% 根据剪切点调光
+
+% 背光值下降
+BL = BL_0.*(ICCP/255);
+% 像素补偿
+IMG = img.*(255/ICCP);
+IMG(IMG>255)=255;
+% 调光后显示图像
+IMAGE = IMG.*BL;
+imshow(IMAGE/255)
+
+imwrite(IMAGE/255, 'F:\nie1\cut1.jpg');
+
+% 计算PSNR
+mse = immse(image, IMAGE);
+psnr = 10 * log10((255^2) / mse);
+
+% 计算SSIM
+ssim_value = ssim(image, IMAGE);
+
+% 计算PPR
+ppr=(255-ICCP)/255*100;
